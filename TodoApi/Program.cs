@@ -75,7 +75,11 @@ var todos = new List<TodoGetDto>
 // LOGIN
 // ===============================
 
-app.MapPost("/api/auth/login", (LoginDto login) =>
+var authGroup =
+    app.MapGroup("/api/auth")
+        .WithTags("Authentication");
+
+authGroup.MapPost("/login", (LoginDto login) =>
 {
     const string username = "admin";
     const string password = "1234";
@@ -130,18 +134,22 @@ app.MapPost("/api/auth/login", (LoginDto login) =>
 // GET ALL
 // ===============================
 
-app.MapGet("/api/todos", () =>
+var todoGroup =
+    app.MapGroup("/api/todos")
+        .WithTags("Todos")
+        .RequireAuthorization();
+
+todoGroup.MapGet("", () =>
 {
     return Results.Ok(todos);
-})
-.RequireAuthorization();
+});
 
 
 // ===============================
 // GET BY ID
 // ===============================
 
-app.MapGet("/api/todos/{id:int}", (int id) =>
+todoGroup.MapGet("/{id:int}", (int id) =>
 {
     var todo =
         todos.FirstOrDefault(t => t.Id == id);
@@ -155,15 +163,14 @@ app.MapGet("/api/todos/{id:int}", (int id) =>
     }
 
     return Results.Ok(todo);
-})
-.RequireAuthorization();
+});
 
 
 // ===============================
 // CREATE
 // ===============================
 
-app.MapPost("/api/todos", (TodoPostDto dto) =>
+todoGroup.MapPost("", (TodoPostDto dto) =>
 {
     if (string.IsNullOrWhiteSpace(dto.Title))
     {
@@ -191,16 +198,15 @@ app.MapPost("/api/todos", (TodoPostDto dto) =>
         $"/api/todos/{todo.Id}",
         todo
     );
-})
-.RequireAuthorization();
+});
 
 
 // ===============================
 // UPDATE
 // ===============================
 
-app.MapPut(
-    "/api/todos/{id:int}",
+todoGroup.MapPut(
+    "/{id:int}",
     (int id, TodoPutDto dto) =>
     {
         try
@@ -243,15 +249,14 @@ app.MapPut(
             );
         }
     }
-)
-.RequireAuthorization();
+);
 
 
 // ===============================
 // DELETE
 // ===============================
 
-app.MapDelete("/api/todos/{id:int}", (int id) =>
+todoGroup.MapDelete("/{id:int}", (int id) =>
 {
     try
     {
@@ -277,8 +282,7 @@ app.MapDelete("/api/todos/{id:int}", (int id) =>
             title: "Unable to delete todo"
         );
     }
-})
-.RequireAuthorization();
+});
 
 
 app.Run();

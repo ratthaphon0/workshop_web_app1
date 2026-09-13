@@ -1,264 +1,140 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
 
 using TodoApi.Dtos;
+using TodoApi.Models;
+using TodoApi.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ===============================
-// Services
-// ===============================
-
+// Add services to the container.
+// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new Exception("JWT Key not found");
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
+));
 
-var key = Encoding.UTF8.GetBytes(jwtKey);
-
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters =
-            new TokenValidationParameters
-            {
-                ValidateIssuer = false,
-                ValidateAudience = false,
-                ValidateLifetime = true,
-
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey =
-                    new SymmetricSecurityKey(key),
-
-                ClockSkew = TimeSpan.Zero
-            };
-    });
-
-builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// ===============================
-// Development
-// ===============================
-
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-// ใช้ HTTP ก่อนสำหรับ workshop
-// app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 
-app.UseAuthentication();
-app.UseAuthorization();
+var todoGroup = app.MapGroup("/api/todos").WithTags("Todos");
 
+#region In-Memory Endpoints
 
-// ===============================
-// Fake Database
-// ===============================
+// var todos = new List<TodoGetDto>
+// {
+//     new(1, "Learn C#", true),
+//     new(2, "Learn ASP.NET Core", false),
+//     new(3, "Build a web API", false)
+// };
 
-var todos = new List<TodoGetDto>
+// todoGroup.MapGet("/", () => Results.Ok(todos));
+
+// todoGroup.MapGet("/{id}", (int id) =>
+// {
+//     var todo = todos.FirstOrDefault(t => t.Id == id);
+
+//     return todo is not null ? Results.Ok(todo) : Results.NotFound();
+// });
+
+// todoGroup.MapPost("/", (TodoPostDto dto) =>
+// {
+//     var nextId = todos.Count == 0 ? 1 : todos.Max(t => t.Id) + 1;
+
+//     var todo = new TodoGetDto(nextId, dto.Title, false);
+//     todos.Add(todo);
+
+//     return Results.Created($"/{todo.Id}", todo);
+// });
+
+// todoGroup.MapPut("/{id}", (int id, TodoPutDto dto) =>
+// {
+//     try
+//     {
+//         var index = todos.FindIndex(t => t.Id == id);
+//         //if (index == -1) return Results.NotFound();
+
+//         todos[index] = todos[index] with
+//         {
+//             Title = dto.Title,
+//             IsCompleted = dto.IsCompleted
+//         };
+
+//         return Results.Ok(todos[index]);
+//     }
+//     catch (Exception ex)
+//     {
+//         return Results.Problem(ex.Message);
+//     }
+// });
+
+// todoGroup.MapDelete("/{id}", (int id) =>
+// {
+//     try
+//     {
+//         var todo = todos.FirstOrDefault(t => t.Id == id);
+//         if (todo is null) return Results.NotFound();
+
+//         todos.Remove(todo);
+//         return Results.NoContent();
+//     }
+//     catch(ArgumentNullException ex)
+//     {
+//         return Results.Problem("Parameter is null.{ex.Message}");
+//     }
+//     catch(Exception ex)
+//     {
+//         return Results.Problem(ex.Message);
+//     }
+// });
+
+#endregion
+
+#region Database Endpoints
+
+todoGroup.MapGet("/", async (AppDbContext db) =>
 {
-    new(1, "Learn C#", true),
-    new(2, "Learn ASP.NET Core", false),
-    new(3, "Build a web API", false)
-};
+    var todos = await db.Todos.ToListAsync();
 
+    var todoGetDtos = todos.Select(t => 
+                            new TodoGetDto(
+                                t.Id, 
+                                t.Title, 
+                                t.IsCompleted));
 
-// ===============================
-// LOGIN
-// ===============================
-
-app.MapPost("/api/auth/login", (LoginDto login) =>
-{
-    const string username = "admin";
-    const string password = "1234";
-
-    if (
-        login.Username != username ||
-        login.Password != password
-    )
-    {
-        return Results.Unauthorized();
-    }
-
-    var claims = new[]
-    {
-        new Claim(
-            ClaimTypes.Name,
-            login.Username
-        ),
-
-        new Claim(
-            ClaimTypes.Role,
-            "Admin"
-        )
-    };
-
-    var credentials =
-        new SigningCredentials(
-            new SymmetricSecurityKey(key),
-            SecurityAlgorithms.HmacSha256
-        );
-
-    var jwtToken =
-        new JwtSecurityToken(
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: credentials
-        );
-
-    var token =
-        new JwtSecurityTokenHandler()
-            .WriteToken(jwtToken);
-
-    return Results.Ok(new
-    {
-        token,
-        expiresIn = 3600
-    });
+    return todos.Count == 0 ? Results.NotFound() : Results.Ok(todoGetDtos);
 });
 
-
-// ===============================
-// GET ALL
-// ===============================
-
-app.MapGet("/api/todos", () =>
+todoGroup.MapPost("/", async (AppDbContext db, TodoPostDto dto) =>
 {
-    return Results.Ok(todos);
-})
-.RequireAuthorization();
+    //read the last id from the Database and increment it by 1
+    var lastTodo = await db.Todos.OrderByDescending(t => t.Id).FirstOrDefaultAsync();
+    var nextId = lastTodo is null ? 1 : lastTodo.Id + 1;
 
+    var todo = new TodoItem
+    {   
+        Id = nextId,
+        Title = dto.Title,
+        IsCompleted = false,
+        CreatedAt = DateTime.UtcNow
+    };
 
-// ===============================
-// GET BY ID
-// ===============================
+    db.Todos.Add(todo);
+    await db.SaveChangesAsync();
 
-app.MapGet("/api/todos/{id:int}", (int id) =>
-{
-    var todo =
-        todos.FirstOrDefault(t => t.Id == id);
+    var todoDto = new TodoGetDto(todo.Id, todo.Title, todo.IsCompleted);
+    
+    return Results.Created($"/api/todos/{todo.Id}", todo);
+});
 
-    if (todo is null)
-    {
-        return Results.NotFound(new
-        {
-            message = "Todo not found"
-        });
-    }
-
-    return Results.Ok(todo);
-})
-.RequireAuthorization();
-
-
-// ===============================
-// CREATE
-// ===============================
-
-app.MapPost("/api/todos", (TodoPostDto dto) =>
-{
-    if (string.IsNullOrWhiteSpace(dto.Title))
-    {
-        return Results.BadRequest(new
-        {
-            message = "Title is required"
-        });
-    }
-
-    var nextId =
-        todos.Count == 0
-            ? 1
-            : todos.Max(t => t.Id) + 1;
-
-    var todo =
-        new TodoGetDto(
-            nextId,
-            dto.Title,
-            false
-        );
-
-    todos.Add(todo);
-
-    return Results.Created(
-        $"/api/todos/{todo.Id}",
-        todo
-    );
-})
-.RequireAuthorization();
-
-
-// ===============================
-// UPDATE
-// ===============================
-
-app.MapPut(
-    "/api/todos/{id:int}",
-    (int id, TodoPutDto dto) =>
-    {
-        var index =
-            todos.FindIndex(t => t.Id == id);
-
-        if (index == -1)
-        {
-            return Results.NotFound(new
-            {
-                message = "Todo not found"
-            });
-        }
-
-        if (string.IsNullOrWhiteSpace(dto.Title))
-        {
-            return Results.BadRequest(new
-            {
-                message = "Title is required"
-            });
-        }
-
-        var updatedTodo =
-            new TodoGetDto(
-                id,
-                dto.Title,
-                dto.IsCompleted
-            );
-
-        todos[index] = updatedTodo;
-
-        return Results.Ok(updatedTodo);
-    }
-)
-.RequireAuthorization();
-
-
-// ===============================
-// DELETE
-// ===============================
-
-app.MapDelete("/api/todos/{id:int}", (int id) =>
-{
-    var todo =
-        todos.FirstOrDefault(t => t.Id == id);
-
-    if (todo is null)
-    {
-        return Results.NotFound(new
-        {
-            message = "Todo not found"
-        });
-    }
-
-    todos.Remove(todo);
-
-    return Results.NoContent();
-})
-.RequireAuthorization();
-
+#endregion
 
 app.Run();

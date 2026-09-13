@@ -253,20 +253,30 @@ app.MapPut(
 
 app.MapDelete("/api/todos/{id:int}", (int id) =>
 {
-    var todo =
-        todos.FirstOrDefault(t => t.Id == id);
-
-    if (todo is null)
+    try
     {
-        return Results.NotFound(new
+        var todo =
+            todos.FirstOrDefault(t => t.Id == id);
+
+        if (todo is null)
         {
-            message = "Todo not found"
-        });
+            return Results.NotFound(new
+            {
+                message = "Todo not found"
+            });
+        }
+
+        todos.Remove(todo);
+
+        return Results.NoContent();
     }
-
-    todos.Remove(todo);
-
-    return Results.NoContent();
+    catch (Exception)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Unable to delete todo"
+        );
+    }
 })
 .RequireAuthorization();
 

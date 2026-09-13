@@ -203,35 +203,45 @@ app.MapPut(
     "/api/todos/{id:int}",
     (int id, TodoPutDto dto) =>
     {
-        var index =
-            todos.FindIndex(t => t.Id == id);
-
-        if (index == -1)
+        try
         {
-            return Results.NotFound(new
-            {
-                message = "Todo not found"
-            });
-        }
+            var index =
+                todos.FindIndex(t => t.Id == id);
 
-        if (string.IsNullOrWhiteSpace(dto.Title))
+            if (index == -1)
+            {
+                return Results.NotFound(new
+                {
+                    message = "Todo not found"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.Title))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "Title is required"
+                });
+            }
+
+            var updatedTodo =
+                new TodoGetDto(
+                    id,
+                    dto.Title,
+                    dto.IsCompleted
+                );
+
+            todos[index] = updatedTodo;
+
+            return Results.Ok(updatedTodo);
+        }
+        catch (Exception)
         {
-            return Results.BadRequest(new
-            {
-                message = "Title is required"
-            });
-        }
-
-        var updatedTodo =
-            new TodoGetDto(
-                id,
-                dto.Title,
-                dto.IsCompleted
+            return Results.Problem(
+                statusCode: StatusCodes.Status500InternalServerError,
+                title: "Unable to update todo"
             );
-
-        todos[index] = updatedTodo;
-
-        return Results.Ok(updatedTodo);
+        }
     }
 )
 .RequireAuthorization();

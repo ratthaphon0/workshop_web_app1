@@ -14,6 +14,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
 ));
 
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -102,7 +103,14 @@ var todoGroup = app.MapGroup("/api/todos").WithTags("Todos");
 todoGroup.MapGet("/", async (AppDbContext db) =>
 {
     var todos = await db.Todos.ToListAsync();
-    return todos.Count == 0 ? Results.NotFound() : Results.Ok(todos);
+
+    var todoGetDtos = todos.Select(t => 
+                            new TodoGetDto(
+                                t.Id, 
+                                t.Title, 
+                                t.IsCompleted));
+
+    return todos.Count == 0 ? Results.NotFound() : Results.Ok(todoGetDtos);
 });
 
 todoGroup.MapPost("/", async (AppDbContext db, TodoPostDto dto) =>
